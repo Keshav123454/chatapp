@@ -1,70 +1,49 @@
-const WebSocket = require("ws");
-const readline = require("readline");
+import { io } from "socket.io-client";
 
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
+const userId = process.argv[2]; // node client.js user1
+
+if (!userId) {
+    console.log("Usage: node client.js <userId>");
+    process.exit(1);
+}
+
+const socket = io("http://localhost:3000");
+
+socket.on("connect", () => {
+    console.log(`Connected as ${userId}`);
+    console.log(`Socket ID: ${socket.id}`);
+
+    socket.emit("register", userId);
 });
 
-rl.question("Enter your User ID: ", (userId) => {
+socket.on("receive_message", (data) => {
+    console.log("\n📩 New Message");
+    console.log(`From: ${data.senderId}`);
+    console.log(`Message: ${data.message}`);
+});
 
-    const socket = new WebSocket("ws://localhost:8000");
+socket.on("error_message", (msg) => {
+    console.log("❌", msg);
+});
 
-    socket.on("open", () => {
-        console.log("Connected to server");
-        console.log(userId, "is connecting...");
-        // Register user
-        socket.send(
-            JSON.stringify({
-                type: "register",
-                userId
-            })
-        );
+// Send a message from terminal
+process.stdin.on("data", (data) => {
+    const input = data.toString().trim();
 
-        console.log(`
-Connected as User ${userId}
+    // Format:
+    // receiverId:message
+    const [receiverId, ...messageParts] = input.split(":");
 
-Format:
-receiverId:message
+    const message = messageParts.join(":");
 
-Example:
-2:Hello Rahul
-3:How are you?
-        `);
+    if (!receiverId || !message) {
+        console.log("Format: receiverId:message");
+        return;
+    }
 
-        rl.on("line", (input) => {
-
-            const [to, ...messageParts] = input.split(":");
-
-            const text = messageParts.join(":");
-
-            if (!to || !text) {
-                console.log("Use: receiverId:message");
-                return;
-            }
-
-            socket.send(
-                JSON.stringify({
-                    type: "message",
-                    to,
-                    text
-                })
-            );
-        });
-    });
-
-    socket.on("message", (message) => {
-
-        const data = JSON.parse(message);
-
-        if (data.type === "message") {
-            console.log(`\nUser ${data.from}: ${data.text}`);
-        } else {
-            console.log(`\n${data.message}`);
-        }
-    });
-
-    socket.on("close", () => {
-        console.log("Disconnected");
+    socket.emit("private_message", {
+        senderId: userId,
+        receiverId,
+        message,
     });
 });

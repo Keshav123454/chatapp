@@ -1,10 +1,20 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
+import { createServer } from "http";
+import { Server } from "socket.io";
+
 import { fetchUserFromDb } from "./utils.js";
 import { createUser } from "./utils.js";
 
 const app = express();
+const server = createServer(app);
+
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+    },
+});
 const port = 3000;
 
 // Parse JSON request bodies
@@ -14,6 +24,48 @@ app.use(express.json());
 app.get("/", (req, res) => {
     res.send("Hello World!");
 });
+
+// const io = new Server(server);
+const users = new Map();
+
+io.on("connection", (socket) => {
+    console.log(`Connected id: ${socket.id}`);
+
+    // Register user
+    socket.on("register", (userId) => {
+        users.set(userId, socket.id);
+
+        console.log(`User ${userId} registered`);
+        console.log(users);
+    });
+
+    // One-to-one message
+    socket.on("private_message", ({ senderId, receiverId, message }) => {
+        const receiverSocketId = users.get(receiverId);
+
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("receive_message", {
+                senderId,
+                message,
+            });
+        } else {
+            socket.emit("error_message", "Receiver is offline");
+        }
+    });
+
+    socket.on("disconnect", () => {
+        console.log(`Disconnected: ${socket.id}`);
+
+        // Remove disconnected user
+        for (const [userId, socketId] of users.entries()) {
+            if (socketId === socket.id) {
+                users.delete(userId);
+                break;
+            }
+        }
+    });
+});
+
 
 app.post("/signup", (req, res) => {
     // Here you would normally handle user registration logic
@@ -102,6 +154,6 @@ app.post("/refresh-token", (req, res) => {
     }
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
